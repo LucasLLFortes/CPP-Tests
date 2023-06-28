@@ -1,6 +1,7 @@
-## Unreleased
+## v0.1.0 (2023-06-27)
 
 ### Feat
 
-- **LearningCommitizen**: Second feature
-- **LearningCommitizen**: First feature
+- **All**: First files
+
+## v0.0.1 (2023-06-27)
