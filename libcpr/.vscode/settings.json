@@ -1,0 +1,7 @@
+{
+    "sonarlint.pathToCompileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "files.associations": {
+        "atomic": "cpp"
+    },
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
+}
