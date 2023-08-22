@@ -124,6 +124,8 @@ int layer1(int a, int b, bool forceExcept0, bool forceExcept1, bool forceExcept2
 
 void layer2(int c, int d, bool forceExcept0, bool forceExcept1, bool forceExcept2){
 
+    // throw 0;
+
     try{
 
         if(forceExcept2){
