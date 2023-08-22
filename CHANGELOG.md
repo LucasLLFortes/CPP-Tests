@@ -3,11 +3,6 @@
 ### Feat
 
 - **libcpr**: Usando CMake pela primeira vez para instalar biblioteca. Testes de comunicaçao HTTP
-
-## v0.2.0 (2023-08-22)
-
-### Feat
-
 - Aprendendo Json, lib nlohmann, e edicao de codigos anteriores
 - **LearningCommitizen**: Sum feature
 
