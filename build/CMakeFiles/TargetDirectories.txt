@@ -1,0 +1,4 @@
+/home/lucasfortes/AT_STUFF/Desenvolvimento/Algoritmos e Codigos/CPP/CPP Tests/build/CMakeFiles/rebuild_cache.dir
+/home/lucasfortes/AT_STUFF/Desenvolvimento/Algoritmos e Codigos/CPP/CPP Tests/build/CMakeFiles/edit_cache.dir
+/home/lucasfortes/AT_STUFF/Desenvolvimento/Algoritmos e Codigos/CPP/CPP Tests/build/CMakeFiles/run.dir
+/home/lucasfortes/AT_STUFF/Desenvolvimento/Algoritmos e Codigos/CPP/CPP Tests/build/CMakeFiles/mylibcpr.dir

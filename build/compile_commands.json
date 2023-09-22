@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/home/lucasfortes/AT_STUFF/Desenvolvimento/Algoritmos e Codigos/CPP/CPP Tests/build",
+  "command": "/usr/bin/g++    -g   -std=gnu++17 -o CMakeFiles/mylibcpr.dir/main.cpp.o -c \"/home/lucasfortes/AT_STUFF/Desenvolvimento/Algoritmos e Codigos/CPP/CPP Tests/libcpr/main.cpp\"",
+  "file": "/home/lucasfortes/AT_STUFF/Desenvolvimento/Algoritmos e Codigos/CPP/CPP Tests/libcpr/main.cpp"
+}
+]
