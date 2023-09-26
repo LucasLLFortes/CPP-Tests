@@ -61,7 +61,20 @@
         "thread": "cpp",
         "cinttypes": "cpp",
         "typeinfo": "cpp",
-        "valarray": "cpp"
+        "valarray": "cpp",
+        "csetjmp": "cpp",
+        "csignal": "cpp",
+        "any": "cpp",
+        "cfenv": "cpp",
+        "charconv": "cpp",
+        "complex": "cpp",
+        "cuchar": "cpp",
+        "set": "cpp",
+        "future": "cpp",
+        "scoped_allocator": "cpp",
+        "typeindex": "cpp",
+        "variant": "cpp"
     },
-    "cmake.sourceDirectory": "/home/lucasfortes/AT_STUFF/Desenvolvimento/Algoritmos e Codigos/CPP/CPP Tests/libcpr"
+    "cmake.sourceDirectory": "/home/lucasfortes/AT_STUFF/Desenvolvimento/Algoritmos e Codigos/CPP/CPP Tests/libcpr",
+    "sonarlint.pathToCompileCommands": "${workspaceFolder}/build/compile_commands.json"
 }

@@ -1,6 +1,7 @@
 // LearningLibcpr
+
 // compile With:
-// g++ -Wall -pthread -std=c++17 -L ./cpr/build/lib -lcpr -lcurl -o LearningLibcpr LearningLibcpr.cpp
+// cmake -Bbuild-cmake -H. -GNinja
 
 #include <iostream>
 #include <cpr/cpr.h>
