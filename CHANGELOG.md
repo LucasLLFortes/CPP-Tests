@@ -1,4 +1,8 @@
-## Unreleased
+## v0.3.0 (2023-09-26)
+
+### Feat
+
+- **LearningChrono**: Aprendendo a usar Chrono com steady_clock e system_clock
 
 ## v0.2.0 (2023-08-22)
 
