@@ -1,3 +1,9 @@
+## v0.5.0 (2024-11-21)
+
+### Feat
+
+- **LearningExpressionParser**: Testando Expressoes matematicas
+
 ## v0.4.0 (2024-11-21)
 
 ### Feat
