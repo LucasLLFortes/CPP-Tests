@@ -26,6 +26,39 @@ typedef struct{
     // TIMESTAMP timestamp         ;
 }TMInfo;
 
+
+typedef struct {
+    long alarm_id;
+    std::string alarm_date;
+    long power_station_id;
+    long ets_tag_id;
+    long skid_id;
+    long equipment_id;
+    long teleobject_id;
+    int alarm_severity_id;
+    std::string alarm_description;
+} NotificationAlarmInfo;
+
+typedef struct {
+    std::string power_station_name = "";
+    std::string skid_name = "";
+    std::string equipment_name = "";
+    std::string tele_object_name = "";
+    std::string severity_name = "";
+} AlarmDetails;
+
+// Struct for User Information
+typedef struct{
+    long user_id;
+    std::string name;
+    std::string email;
+    std::string telegram_notification;
+    std::string telegram_enabled;
+    std::string whatsapp_notification;
+    std::string email_notification;
+    std::string email_enabled;
+} UserInfo;
+
 typedef long TO_CODE;
 
 
@@ -168,10 +201,139 @@ int main() {
     json test_json_deserialization;
     test_json_deserialization = json::parse(body);
 
-    output_tm_list = test_json_deserialization["powerStationId"].get();
+    // output_tm_list = test_json_deserialization["powerStationId"].get();
 
     std::cout << "\n>>> parsed_body:\n" << test_json_deserialization.dump(4) << std::endl;
 
+
+    json test_json_structuring;
+    json json1, json2;
+
+    // test_json_structuring["layer0"]["layer1"] = {"another", "list"};
+
+    // json1["json1"] = {"some", "info"};
+    // json2["json2"] = {"some", "info 2"};
+    // test_json_structuring = 
+    // {
+    //     1 >= 0 ? json1 : json2
+    // };
+
+    if(true){
+        test_json_structuring["telegram"] = 
+        {   
+            {"phone", "blah blah"},
+            {"message", "blah blah"}
+        };
+    }
+        
+    if(-1){
+        test_json_structuring["mail"] = 
+        {   
+            {"to", "blah blah"},
+            {"message", "blah blah"}
+        };
+    }
+
+    std::cout << "\n>>> Quick structure building tests:\n" << test_json_structuring.dump(4) << std::endl;
+
+
+//     bool AlarmNotifsHandler::preparePayload(UserInfo user_info)
+// {
+//     LogMethod(LOCAL_DEBUG);
+
+    UserInfo user_info;
+    user_info = {
+        1, //user_id
+        "user_name", //name
+        "user_email", //email
+        "+553195589558", //telegram_notification
+        "TRUE", //telegram_enabled
+        "+553195589558", //whatsapp_notification
+        "lllfortes@hotmail.com", //email_notification
+        "TRUE" //email_enabled
+    };
+
+    NotificationAlarmInfo alarm_info;
+    alarm_info = {
+            1234, // alarm_id
+            "12-12-2024 12:34:56", // alarm_date
+            88,   // power_station_id
+            1010, // ets_tag_id
+            5,    // skid_id
+            896,  // equipment_id
+            17458,// teleobject_id
+            6,    // alarm_severity_id
+            "Alarme Urgente" // alarm_description
+        };
+    
+    bool result = false;
+    json request_json;
+    std::string request_body;
+    std::string client_message;
+
+
+    AlarmDetails alarm_details;
+    alarm_details = {
+        "power_station_name",
+        "skid_name",
+        "equipment_name",
+        "tele_object_name",
+        "severity_name"
+    };
+
+    
+    
+    request_body.clear();
+    request_json.clear();
+
+    client_message  = "Olá " + user_info.name + ",\n\nVocê tem uma nova notificação de alarme. Seguem as informações do alarme:\n\n";
+    client_message += "Usina:\t"            + alarm_details.power_station_name + "\n";
+    client_message += "Equipamento: "       + alarm_details.equipment_name;
+    if(!alarm_details.skid_name.empty())
+        client_message += " - " + alarm_details.skid_name; 
+    client_message += "\n\n";
+    client_message += "Descrição:\t"        + alarm_info.alarm_description  + "\n";
+    client_message += "Severidade:\t"       + alarm_details.severity_name   + "\n";
+    client_message += "Data de Início:\t"   + alarm_info.alarm_date         + "\n\n\n\n\n\n";
+    client_message += "© 2025 ATI. All rights reserved.\n\nSe você tiver dúvidas, entre em contato conosco: suporteati@ati.com.br";
+
+    bool HTML_formatting_enabled = true;
+
+    // Se estiver habilitado para email, envia email
+    if(!user_info.email_enabled.compare("TRUE"))
+    {
+        request_json["mail"] = 
+        {                
+            {"to", user_info.email_notification},
+            {"message", client_message},
+            {"html", HTML_formatting_enabled}
+        };
+    }
+
+    // Se estiver habilitado para telegram, adiciona parte de mensagem para telegram
+    if(!user_info.telegram_enabled.compare("TRUE"))
+    {
+        request_json["telegram"] =
+        {
+            {"phoneNumber", user_info.telegram_notification},
+            {"message", client_message}
+        };
+    }
+
+    request_body = request_json.dump(4);
+
+    #ifdef DEBUG_HTTP_REQUEST
+        Logger::lprintf(LOCAL_DEBUG, "AlarmNotifsHandler::preparePayload() - request_body: %s", request_body.c_str());
+    #endif
+    
+    
+    // }
+
+    // std::cout << "\n>>> Quick structure building tests:\n" << request_body << std::endl;
+
+    std::cout << "\n>>> Quick structure building tests:\n" << request_body << std::endl;
+    std::cout << "\n>>> Quick structure building tests:\n" << request_body.substr(0,10) << std::endl;
+    std::cout << "\n>>> Quick structure building tests:\n" << request_body << std::endl;
 
     return 0;
 
