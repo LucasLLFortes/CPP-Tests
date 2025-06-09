@@ -1,7 +1,7 @@
 #include "TaskScheduler.h"
 #include "Logger.h"
 #include "misc.h"
-
+#include <sstream>
 #include <algorithm>
 #include <numeric>
 
@@ -138,7 +138,7 @@ void TaskScheduler::scheduler(std::promise<void> &barrier)
     while(!stopExecution)
     {
         std::unique_lock tlock(tmutex);
-        cv.wait_for(tlock, next_execution, [&]{ return taskUpdate || stopExecution; } );
+        cv.wait_for(tlock, seconds(4), [&]{ return taskUpdate || stopExecution; } );
 
         // Finaliza o metodo
         if(stopExecution) break;
@@ -147,7 +147,7 @@ void TaskScheduler::scheduler(std::promise<void> &barrier)
         taskUpdate = false;
 
         // Inicialmente coloca um tempo "infinito" para verificar a task novamente
-        next_execution = std::numeric_limits<seconds>::max();
+        // next_execution = std::numeric_limits<seconds>::max();
 
         // Analisa os outros elementos do vetor
         for(size_t next = 0; next < execution_time.size(); next++)
@@ -159,13 +159,89 @@ void TaskScheduler::scheduler(std::promise<void> &barrier)
                 int64_t dur = next_period_calculator(ed);
 
                 // Verifica se e o proximo a executar, e se for, indica em quanto tempo
-                if(next_execution > seconds(dur)) next_execution = seconds(dur);
+                // if(next_execution > seconds(dur)) next_execution = seconds(dur);
             }
         }
 
         // pausa de execucao de thread por 4 segundos. Deve ser menor que metade do tempo da rotina mais frequente da taskScheduler:
         // No caso, atualmente a task "TaskScheduler::registerTask(WebSSS::CheckSSSAlive, CHECK_SYSTEM_INTERVAL)"
-        std::this_thread::sleep_for(seconds(4)); 
+        // std::this_thread::sleep_for(seconds(4)); 
+    }
+}
+
+std::string TaskScheduler::getStatus() {
+    std::stringstream status;
+    
+    // Check if scheduler is running
+    status << "Scheduler Status: " << (was_started ? "RUNNING" : "STOPPED") << "\n";
+    status << "Total registered tasks: " << execution_time.size() << "\n";
+    status << "\nActive Tasks:\n";
+    
+    for (const auto& task : execution_time) {
+        if (!task.ignore) {
+            auto now = steady_clock::now();
+            auto duration = duration_cast<seconds>(now - task.last_execution).count();
+            
+            status << "  Task ID: "           << task.id << "\t"
+                   << "  Period: "          << task.period << " seconds\t"
+                   << "  Type: "            << (task.type == ScheduledType::PERIOD ? "PERIODIC" : "METHOD") << "\t"
+                   << "  Last execution: "  << duration << " seconds ago\t"
+                   << "-------------------\n";
+        }
+    }
+    
+    return status.str();
+}
+
+void TaskScheduler::schedulerMonitorLoop(int check_period_seconds) 
+{
+    bool is_monitor_running = true;
+
+    while (is_monitor_running) {
+        checkSchedulerStatus();
+        std::this_thread::sleep_for(std::chrono::seconds(check_period_seconds));
+    }
+}
+
+void TaskScheduler::checkSchedulerStatus() 
+{
+    bool scheduler_running = started();
+    
+    Logger::lprintf(NORMAL, "TaskScheduler Monitor Status:\n");
+    Logger::lprintf(NORMAL, "Scheduler Status: %s\n", 
+        scheduler_running ? "RUNNING" : "STOPPED");
+
+    if (scheduler_running) 
+    {        
+        Logger::lprintf(NORMAL, "Total registered tasks: %zu\n", 
+            TaskScheduler::execution_time.size());
+    }
+    else 
+    {
+        Logger::lprintf(NORMAL, "AVISO. TaskScheduler Travado!!\n");
+    }
+
+    for (const auto& task : TaskScheduler::execution_time) 
+    {
+        if (!task.ignore) 
+        {
+            auto now = steady_clock::now();
+            auto duration = duration_cast<seconds>(now - task.last_execution).count();
+            
+            Logger::lprintf(NORMAL,
+                "Task ID: %zu\t"
+                "  Name: %s\t"
+                "  Period: %zu seconds\t"
+                "  Type: %s\t"
+                "  Last execution: %ld seconds ago\t"
+                "-------------------\n",
+                task.id,
+                task.task_name.c_str(),
+                task.period,
+                (task.type == TaskScheduler::ScheduledType::PERIOD ? "PERIODIC" : "METHOD"),
+                duration
+            );
+        }
     }
 }
 

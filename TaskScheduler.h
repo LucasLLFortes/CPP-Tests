@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <functional>
@@ -28,16 +27,16 @@ private:
     public:
 
         // ID do elemento
-        const size_t id;
+        size_t id;
 
         // Periodo para executar
-        std::atomic<size_t> period;
+        size_t period;
 
         // No caso de horarios estabelecidos para executar, estabelece quando
         size_t month, day, hour, min, sec;
 
         // Tempo de ultima execucao
-        std::atomic<steady_clock::time_point> last_execution = steady_clock::now();
+        time_point<steady_clock> last_execution = steady_clock::now();
 
         // Metodo terminou execucao
         std::future<void> execution_end;
@@ -57,25 +56,33 @@ private:
         // Metodo indicando quando executar
         std::function<int64_t(time_t)> execute_timer;
 
+        // Nome da task
+        std::string task_name;
+
         // Indica se foi configurado por horario ou periodo
         ScheduledType type;
 
         // Indica se a estrutura deve ser ignorada
-        std::atomic<bool> ignore{false};
+        bool ignore = false;
 
         // Construtores
         template<typename Function, typename Period, 
             typename std::enable_if<!std::is_invocable_v<Period, time_t>>::type* = nullptr>
-        EXECUTION_DATA(Function&& f, size_t task_id, Period p, std::string name = "unnamed_task") :
-            id(task_id), period(p), f(std::forward<Function>(f)), type(ScheduledType::PERIOD) {
-            last_execution = steady_clock::now();
-        }
+        EXECUTION_DATA(Function&& f, size_t id, Period period, std::string name = "unnamed_task") :
+            id(id), period(period), 
+            f(std::forward<Function>(f)), 
+            type(ScheduledType::PERIOD), 
+            task_name(std::move(name)) 
+            {};
 
         template<typename Function, typename PeriodFunction,
             typename std::enable_if<std::is_invocable_v<PeriodFunction, time_t>>::type* = nullptr>
-        EXECUTION_DATA(Function&& f, size_t id, PeriodFunction&& execute_timer) :
-            id(id), f(std::forward<Function>(f)), 
-            execute_timer(std::forward<PeriodFunction>(execute_timer)), type(ScheduledType::METHOD)
+        EXECUTION_DATA(Function&& f, size_t id, PeriodFunction&& execute_timer, std::string name = "unnamed_task") :
+        id(id), 
+        f(std::forward<Function>(f)), 
+        execute_timer(std::forward<PeriodFunction>(execute_timer)), 
+        type(ScheduledType::METHOD), 
+        task_name(std::move(name))
         {
             time_t rawtime;
             time(&rawtime);
@@ -99,7 +106,7 @@ public:
 
     template<typename Function, typename PeriodFunction>
     typename std::enable_if_t<std::is_invocable_v<PeriodFunction, time_t>, size_t>
-    static registerTask(Function&& f, PeriodFunction&& period)
+    static registerTask(Function&& f, PeriodFunction&& period, std::string task_name = "unnamed_task")
     {
         size_t retid;
         Logger::lprintf(DEBUG, "TaskScheduler::registerTask() - Iniciando register task\n");
@@ -110,8 +117,10 @@ public:
 
             Logger::lprintf(DEBUG, "TaskScheduler::registerTask() - retid: %ld\n",retid);
 
-            EXECUTION_DATA data(std::forward<Function>(f), retid,
-                                    std::forward<PeriodFunction>(period));
+            EXECUTION_DATA data(std::forward<Function>(f), 
+                                retid,
+                                std::forward<PeriodFunction>(period),
+                                std::move(task_name));
             execution_time.push_back( std::move(data) );
 
             taskUpdate = true;
@@ -125,7 +134,7 @@ public:
 
     template<typename Function, typename Period>
     typename std::enable_if_t<!std::is_invocable_v<Period, time_t>, size_t>
-    static registerTask(Function&& f, Period period)
+    static registerTask(Function&& f, Period period, std::string task_name = "unnamed_task")
     {
         size_t retid;
 
@@ -137,8 +146,11 @@ public:
 
             Logger::lprintf(DEBUG, "TaskScheduler::registerTaskB() - retid: %ld\n",retid);
 
-            EXECUTION_DATA data(std::forward<Function>(f), retid, period);
-                execution_time.push_back( std::move(data) );
+            EXECUTION_DATA data(std::forward<Function>(f), 
+                                retid, 
+                                period, 
+                                std::move(task_name));
+            execution_time.push_back( std::move(data) );
 
             taskUpdate = true;
         }
@@ -154,6 +166,9 @@ public:
     // updateTaskTime
     //////////////////////////////////////////////////////////////////
 public:
+
+    // Pega o status do modulo
+    static std::string getStatus();
 
     // Atualiza o tempo de uma task
     static bool updateTaskTime(size_t taskid, size_t period);
@@ -237,6 +252,9 @@ public:
     // Checks if scheduler started
     static bool started();
 
+    // Monitors the scheduler status
+    static void schedulerMonitorLoop(int check_period_seconds);
+    static void checkSchedulerStatus();
 private:
 
     static void scheduler(std::promise<void> &barrier);
@@ -268,12 +286,5 @@ private:
 
     // Parar execucao da thread
     inline static bool stopExecution;
-
-    // Atomic flags and counters - no mutex needed for these!
-    inline static std::atomic<bool> taskUpdate{false};
-    inline static std::atomic<bool> stopExecution{false};
-    inline static std::atomic<bool> was_started{false};
-    inline static std::atomic<size_t> id{0};
-    inline static std::atomic<size_t> active_tasks{0};  // New! Track active tasks
 
 };
