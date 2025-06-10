@@ -11,6 +11,8 @@
 
 using namespace std::chrono;
 
+constexpr int MAX_TIME_BETWEEN_TASK_CHECKING = 20;
+
 class TaskScheduler
 {
 
@@ -57,10 +59,13 @@ private:
         std::function<int64_t(time_t)> execute_timer;
 
         // Nome da task
-        std::string task_name;
+        std::string task_name = "";
 
         // Indica se foi configurado por horario ou periodo
-        ScheduledType type;
+        ScheduledType type = ScheduledType::PERIOD;
+
+        std::atomic<bool> is_running{false};  // Add this to track task state
+        std::string task_name;  // Add this for better logging
 
         // Indica se a estrutura deve ser ignorada
         bool ignore = false;
@@ -68,7 +73,7 @@ private:
         // Construtores
         template<typename Function, typename Period, 
             typename std::enable_if<!std::is_invocable_v<Period, time_t>>::type* = nullptr>
-        EXECUTION_DATA(Function&& f, size_t id, Period period, std::string name = "unnamed_task") :
+        EXECUTION_DATA(Function&& f, size_t id, Period period, std::string name) :
             id(id), period(period), 
             f(std::forward<Function>(f)), 
             type(ScheduledType::PERIOD), 
@@ -77,7 +82,7 @@ private:
 
         template<typename Function, typename PeriodFunction,
             typename std::enable_if<std::is_invocable_v<PeriodFunction, time_t>>::type* = nullptr>
-        EXECUTION_DATA(Function&& f, size_t id, PeriodFunction&& execute_timer, std::string name = "unnamed_task") :
+        EXECUTION_DATA(Function&& f, size_t id, PeriodFunction&& execute_timer, std::string name) :
         id(id), 
         f(std::forward<Function>(f)), 
         execute_timer(std::forward<PeriodFunction>(execute_timer)), 
@@ -91,13 +96,32 @@ private:
         }
     };
 
+    // Add this before the TaskScheduler class
+struct TaskConfig {
+    std::function<void()> task_function;
+    std::function<int64_t(time_t)> timer_function;  // nullptr for periodic tasks
+    size_t period;
+    std::string name;
+    ScheduledType type;
+
+    // Constructor for periodic tasks
+    TaskConfig(std::function<void()> f, size_t p, std::string n)
+        : task_function(std::move(f)), period(p), name(std::move(n)), 
+          type(ScheduledType::PERIOD) {}
+    
+    // Constructor for method-based timing
+    TaskConfig(std::function<void()> f, std::function<int64_t(time_t)> tf, std::string n)
+        : task_function(std::move(f)), timer_function(std::move(tf)), 
+          name(std::move(n)), type(ScheduledType::METHOD) {}
+};
+
     ///////////////////////////////////////////////////////////////////
     // Auxiliares
     //////////////////////////////////////////////////////////////////
 
 private:
     static void endTask(std::vector<TaskScheduler::EXECUTION_DATA>::iterator it, std::unique_lock<std::mutex> &tlock);
-    static int64_t next_period_calculator(EXECUTION_DATA *ed);
+    static int64_t checkForTaskExecution(EXECUTION_DATA *ed);
 
     ///////////////////////////////////////////////////////////////////
     // registerTask
@@ -109,13 +133,13 @@ public:
     static registerTask(Function&& f, PeriodFunction&& period, std::string task_name = "unnamed_task")
     {
         size_t retid;
-        Logger::lprintf(DEBUG, "TaskScheduler::registerTask() - Iniciando register task\n");
+        Logger::lprintf(DEBUG, "TaskScheduler::registerTaskMethod() - Iniciando register task\n");
 
         {   std::scoped_lock tlock(tmutex);
 
             retid = ++id;
 
-            Logger::lprintf(DEBUG, "TaskScheduler::registerTask() - retid: %ld\n",retid);
+            Logger::lprintf(DEBUG, "TaskScheduler::registerTaskMethod() - retid: %ld\n",retid);
 
             EXECUTION_DATA data(std::forward<Function>(f), 
                                 retid,
@@ -128,7 +152,7 @@ public:
 
         cv.notify_all();
 
-        Logger::lprintf(DEBUG, "TaskScheduler::registerTask() - Terminando register task\n");
+        Logger::lprintf(DEBUG, "TaskScheduler::registerTaskMethod() - Terminando register task\n");
         return retid;
     }
 
@@ -138,13 +162,13 @@ public:
     {
         size_t retid;
 
-        Logger::lprintf(DEBUG, "TaskScheduler::registerTaskB() - Iniciando register task\n");
+        Logger::lprintf(NORMAL, "TaskScheduler::registerTaskPeriod() - Iniciando register task\n");
 
         {   std::scoped_lock tlock(tmutex);
 
             retid = ++id;
 
-            Logger::lprintf(DEBUG, "TaskScheduler::registerTaskB() - retid: %ld\n",retid);
+            Logger::lprintf(NORMAL, "TaskScheduler::registerTaskPeriod() - retid: %ld\n",retid);
 
             EXECUTION_DATA data(std::forward<Function>(f), 
                                 retid, 
@@ -157,7 +181,7 @@ public:
 
         cv.notify_all();
 
-        Logger::lprintf(DEBUG, "TaskScheduler::registerTaskB() - Terminando register task\n");
+        Logger::lprintf(NORMAL, "TaskScheduler::registerTaskPeriod() - Terminando register task\n");
 
         return retid;
     }
@@ -252,9 +276,18 @@ public:
     // Checks if scheduler started
     static bool started();
 
+    // restart tasks
+    static void restart();
+
+    // // save current tasks
+    // static bool saveTaskConfig(const TaskConfig& config);
+    
+    // // clear current configs
+    // static void clearSavedConfigs();
+
     // Monitors the scheduler status
     static void schedulerMonitorLoop(int check_period_seconds);
-    static void checkSchedulerStatus();
+    static bool checkSchedulerStatus(const int check_period_seconds);
 private:
 
     static void scheduler(std::promise<void> &barrier);
@@ -267,6 +300,9 @@ private:
     // Tempo de cada execução registrada rodar
     inline static std::vector<EXECUTION_DATA> execution_time;
 
+    // // Add this to store configurations
+    // inline static std::vector<TaskConfig> saved_configs;
+    
     // Mutex da classe
     inline static std::mutex tmutex;
     inline static std::condition_variable cv;

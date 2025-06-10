@@ -27,16 +27,22 @@ void TaskScheduler::start()
 void TaskScheduler::stop()
 {
 
+    Logger::lprintf(NORMAL, "TaskScheduler::stop() - Signaling scheduler to end\n");
     stopExecution = true;
 
     cv.notify_all();
 
     // Espera a execucao de executionIntern terminar
+    Logger::lprintf(NORMAL, "TaskScheduler::stop() - Waiting last scheduler end\n");
     scheduler_end.wait();
 
-    // Espera a finalizacao de todas as tasks registradas
+    // Remocao de todas as tasks registradas
     for(auto &v : execution_time) {
-        if(v.execution_end.valid()) v.execution_end.wait();
+        
+        Logger::lprintf(NORMAL, "TaskScheduler::stop() - Removing task %s (ID: %zu)\n", v.task_name.c_str(), v.id);
+        removeTask(v.id);
+        Logger::lprintf(NORMAL, "TaskScheduler::stop() - Removed task %s (ID: %zu)\n", v.task_name.c_str(), v.id);
+        //if(v.execution_end.valid()) v.execution_end.wait();
     }
 
     // A scheduler foi finalizada
@@ -46,6 +52,53 @@ void TaskScheduler::stop()
 bool TaskScheduler::started()
 {
     return was_started;
+}
+
+void TaskScheduler::restart() {
+    Logger::lprintf(NORMAL, "TaskScheduler::restart() - Scheduler restart\n");
+    
+    // Store current configs if needed
+    std::vector<TaskConfig> current_configs;
+    {
+        std::scoped_lock tlock(tmutex);
+        for (const auto& task : execution_time) {
+            if (!task.ignore) {
+                if (task.type == ScheduledType::PERIOD) {
+                    current_configs.emplace_back(task.f, task.period, task.task_name);
+                } else {
+                    current_configs.emplace_back(task.f, task.execute_timer, task.task_name);
+                }
+            }
+        }
+    }
+    
+    // Stop the scheduler
+    stop();
+    Logger::lprintf(NORMAL, "TaskScheduler::restart() - Scheduler stopped. Clearing configs\n");
+
+    // Clear all existing tasks
+    {
+        std::scoped_lock tlock(tmutex);
+        execution_time.clear();
+        never_removed = true;
+        taskUpdate = false;
+        id = 0;
+    }
+    
+    // Recreate tasks from saved configurations
+    for (const auto& config : current_configs) {
+        if (config.type == ScheduledType::PERIOD) {
+            registerTask(config.task_function, config.period, config.name);
+        } else {
+            registerTask(config.task_function, config.timer_function, config.name);
+        }
+    }
+    
+    // Start the scheduler again
+    Logger::lprintf(NORMAL, "TaskScheduler::restart() - Starting scheduler\n");
+    start();
+    
+    Logger::lprintf(NORMAL, "TaskScheduler::restart() - Scheduler successfully restarted\n");
 }
 
 void TaskScheduler::endTask(std::vector<TaskScheduler::EXECUTION_DATA>::iterator it, std::unique_lock<std::mutex> &tlock)
@@ -78,7 +131,7 @@ bool TaskScheduler::removeTask(size_t taskid)
 
     std::unique_lock tlock(tmutex);
 
-    Logger::lprintf(DEBUG, "TaskScheduler::removeTask() - Task Mais Recente: %ld, getNewDataID sendo removida: %ld\n", execution_time.size(),id);
+    Logger::lprintf(DEBUG, "TaskScheduler::removeTask() - Quantidade de tasks: %ld, getNewDataID sendo removida: %ld\n", execution_time.size(),id);
 
     // Procura o elemento e o remove
     auto predicate = [=](const EXECUTION_DATA &a) -> bool
@@ -129,9 +182,6 @@ void TaskScheduler::scheduler(std::promise<void> &barrier)
     // Indica que a thread foi inicializada
     barrier.set_value();
 
-    // Em quantos segundos será executado a thread de execucao
-    seconds next_execution = seconds(0);
-
     // Auxiliares
     EXECUTION_DATA *ed;
 
@@ -156,7 +206,7 @@ void TaskScheduler::scheduler(std::promise<void> &barrier)
             if(!ed->ignore)
             {
                 // Retorna a duracao da task e a executa se for o caso
-                int64_t dur = next_period_calculator(ed);
+                int64_t dur = checkForTaskExecution(ed);
 
                 // Verifica se e o proximo a executar, e se for, indica em quanto tempo
                 // if(next_execution > seconds(dur)) next_execution = seconds(dur);
@@ -167,6 +217,90 @@ void TaskScheduler::scheduler(std::promise<void> &barrier)
         // No caso, atualmente a task "TaskScheduler::registerTask(WebSSS::CheckSSSAlive, CHECK_SYSTEM_INTERVAL)"
         // std::this_thread::sleep_for(seconds(4)); 
     }
+    
+    /*
+    while(!stopExecution)
+    {
+        std::vector<EXECUTION_DATA*> tasks_to_execute;
+        steady_clock::time_point now = steady_clock::now();
+        // seconds next_execution = seconds(MAX_TIME_BETWEEN_TASK_CHECKING);
+
+        {
+            std::unique_lock tlock(tmutex);
+            cv.wait_for(tlock, seconds(1), [&]{ return taskUpdate || stopExecution; } );
+
+            // Finaliza o metodo
+            if(stopExecution) break;
+
+            // Indica que nao ha nenhuma nova task atualizada
+            taskUpdate = false;
+
+            // Inicialmente coloca um tempo "infinito" para verificar a task novamente
+            for(auto& task : execution_time)
+            {
+                if(task.ignore)
+                    continue;
+
+                auto dur = duration_cast<seconds>(now - task.last_execution).count();
+                if((uint64_t)dur >= task.period)
+                {
+                    tasks_to_execute.push_back(&task);
+                }
+                // else
+                // {
+                //     next_execution = std::min(next_execution, seconds(task.period - dur));
+                // }
+                
+            }
+        }
+
+        // Execute tasks without holding the main lock
+        for(auto* task : tasks_to_execute)
+        {
+
+            if(stopExecution) break;
+
+            try 
+            {
+                //checkForTaskExecution(task);
+
+                Logger::lprintf(VERBOSE, "TaskScheduler::scheduler() - Executing task %s (ID: %zu)\n", task->task_name.c_str(), task->id);
+                // Inicializa a thread de execucao
+                task->execution_end = std::async(std::launch::async, task->f);
+                Logger::lprintf(VERBOSE, "TaskScheduler::scheduler() - Launched - task %s (ID: %zu)\n", task->task_name.c_str(), task->id);
+
+                // Reinicia o contador
+                switch(task->type)
+                {
+                    case ScheduledType::PERIOD:
+                    {
+                        break;
+                    }
+                    case ScheduledType::METHOD:
+                    {
+                        // Reinicia o contador
+                        time_t rawtime;
+                        time(&rawtime);
+
+                        task->period = task->execute_timer(rawtime);
+                        
+                        break;
+                    }
+                }
+
+                task->last_execution = steady_clock::now();
+            }
+            catch(const std::exception& e)
+            {
+                Logger::lprintf(NORMAL, "TaskScheduler::scheduler() - Exception in task %s (ID: %zu): %s\n", task->task_name.c_str(), task->id, e.what());
+            }
+        }
+
+        // Small sleep to prevent busy-waiting
+        std::this_thread::sleep_for(seconds(1));
+
+    }
+    //*/
 }
 
 std::string TaskScheduler::getStatus() {
@@ -196,20 +330,39 @@ std::string TaskScheduler::getStatus() {
 void TaskScheduler::schedulerMonitorLoop(int check_period_seconds) 
 {
     bool is_monitor_running = true;
+    long scheduler_fail_counter = 0;
+    while (is_monitor_running) 
+    {
+        if(!checkSchedulerStatus(check_period_seconds))
+        {
+            scheduler_fail_counter++;
+            if(scheduler_fail_counter > 3)
+            {
+                Logger::lprintf(NORMAL, "TaskScheduler::schedulerMonitorLoop() - Scheduler is not responding. Restarting the scheduler.\n");
+                restart();
+                scheduler_fail_counter = 0;
+            }
+        }
+        else
+        {
+            scheduler_fail_counter = 0;
+        }
 
-    while (is_monitor_running) {
-        checkSchedulerStatus();
+        if(!started())
+        {
+            is_monitor_running = false;
+        } 
+
         std::this_thread::sleep_for(std::chrono::seconds(check_period_seconds));
     }
 }
 
-void TaskScheduler::checkSchedulerStatus() 
+bool TaskScheduler::checkSchedulerStatus(const int check_period_seconds) 
 {
     bool scheduler_running = started();
+    bool scheduler_healthy = true;
     
     Logger::lprintf(NORMAL, "TaskScheduler Monitor Status:\n");
-    Logger::lprintf(NORMAL, "Scheduler Status: %s\n", 
-        scheduler_running ? "RUNNING" : "STOPPED");
 
     if (scheduler_running) 
     {        
@@ -223,37 +376,56 @@ void TaskScheduler::checkSchedulerStatus()
 
     for (const auto& task : TaskScheduler::execution_time) 
     {
-        if (!task.ignore) 
+        if (task.ignore) 
         {
-            auto now = steady_clock::now();
-            auto duration = duration_cast<seconds>(now - task.last_execution).count();
-            
-            Logger::lprintf(NORMAL,
-                "Task ID: %zu\t"
-                "  Name: %s\t"
-                "  Period: %zu seconds\t"
-                "  Type: %s\t"
-                "  Last execution: %ld seconds ago\t"
-                "-------------------\n",
-                task.id,
-                task.task_name.c_str(),
-                task.period,
-                (task.type == TaskScheduler::ScheduledType::PERIOD ? "PERIODIC" : "METHOD"),
-                duration
-            );
+            continue;
+        }
+
+        auto now = steady_clock::now();
+        auto duration = duration_cast<seconds>(now - task.last_execution).count();
+        
+        Logger::lprintf(NORMAL,
+            "Task ID: %zu\t"
+            "  Name: %s\t"
+            "  Period: %zu seconds\t"
+            "  Type: %s\t"
+            "  Last execution: %ld seconds ago\t"
+            "-------------------\n",
+            task.id,
+            task.task_name.c_str(),
+            task.period,
+            (task.type == TaskScheduler::ScheduledType::PERIOD ? "PERIODIC" : "METHOD"),
+            duration
+        );
+
+        // Consistency check        
+        if (duration > task.period + 8 * check_period_seconds) 
+        {
+            Logger::lprintf(NORMAL, "TaskScheduler::checkSchedulerStatus() - Task %s (ID: %zu) has not executed for more than %ld seconds.\n", task.task_name.c_str(), task.id, 8 * check_period_seconds);
+            scheduler_healthy = false;
         }
     }
+
+    Logger::lprintf(NORMAL, "Scheduler Status: %s - %s\n", 
+    scheduler_running ? "RUNNING" : "STOPPED",
+    scheduler_healthy ? "HEALTHY" : "UNHEALTHY");
+        
+    return scheduler_healthy;
 }
 
-int64_t TaskScheduler::next_period_calculator(EXECUTION_DATA *ed)
+int64_t TaskScheduler::checkForTaskExecution(EXECUTION_DATA *ed)
 {
     int64_t dur = duration_cast<seconds>(steady_clock::now()-ed->last_execution).count();
 
     // Se o tempo for maior do que o periodo para ser executado, executa
     if((uint64_t)dur >= ed->period)
     {
+
+        Logger::lprintf(VERBOSE, "TaskScheduler::scheduler() - Executing task %s (ID: %zu)\n", ed->task_name.c_str(), ed->id);
         // Inicializa a thread de execucao
         ed->execution_end = std::async(std::launch::async, ed->f);
+        Logger::lprintf(VERBOSE, "TaskScheduler::scheduler() - Launched - task %s (ID: %zu)\n", ed->task_name.c_str(), ed->id);
+
 
         // Reinicia o contador
         switch(ed->type)

@@ -63,7 +63,7 @@ void slowTimedRoutineTest()
 void slowTimedRoutine2Test()
 {
     
-    static int time = 1;
+    static int time = 7;
     time += 2;
     Logger::lprintf(DEBUG, "-------------------- Casos de teste 4 - %ld segundos - THREADED EXECUTION ----------------------------------\n", time);
 
