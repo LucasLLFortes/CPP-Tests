@@ -59,7 +59,6 @@ void slowTimedRoutineTest()
     Logger::lprintf(DEBUG, "-------------------- Casos de teste 3 ENDED - THREADED EXECUTION ----------------------------------\n");
 }
 
-
 void slowTimedRoutine2Test()
 {
     

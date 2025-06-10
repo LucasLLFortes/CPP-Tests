@@ -7,6 +7,7 @@
 #include <mutex>
 #include <type_traits>
 #include <vector>
+#include <atomic>
 #include "Logger.h"
 
 using namespace std::chrono;
@@ -43,9 +44,6 @@ private:
         // Metodo terminou execucao
         std::future<void> execution_end;
 
-        // Metodo terminou execucao
-        std::future<void> execution_wait;
-
         // Thread de espera ainda nao iniciou
         bool waiting_block = false;
 
@@ -64,8 +62,8 @@ private:
         // Indica se foi configurado por horario ou periodo
         ScheduledType type = ScheduledType::PERIOD;
 
-        std::atomic<bool> is_running{false};  // Add this to track task state
-        std::string task_name;  // Add this for better logging
+        // Para monitorar o estado da task
+        std::atomic<bool> is_running;  
 
         // Indica se a estrutura deve ser ignorada
         bool ignore = false;
@@ -78,7 +76,9 @@ private:
             f(std::forward<Function>(f)), 
             type(ScheduledType::PERIOD), 
             task_name(std::move(name)) 
-            {};
+            {
+                is_running = false;
+            };
 
         template<typename Function, typename PeriodFunction,
             typename std::enable_if<std::is_invocable_v<PeriodFunction, time_t>>::type* = nullptr>
@@ -93,7 +93,54 @@ private:
             time(&rawtime);
 
             period = this->execute_timer(rawtime);
+            is_running = false;
         }
+
+        // Add this move constructor:
+        EXECUTION_DATA(EXECUTION_DATA&& other) noexcept
+            : id(other.id),
+              period(other.period),
+              month(other.month),
+              day(other.day),
+              hour(other.hour),
+              min(other.min),
+              sec(other.sec),
+              last_execution(std::move(other.last_execution)),
+              execution_end(std::move(other.execution_end)),
+              waiting_block(other.waiting_block),
+              tm(other.tm),
+              f(std::move(other.f)),
+              execute_timer(std::move(other.execute_timer)),
+              task_name(std::move(other.task_name)),
+              type(other.type),
+              is_running(other.is_running.load()), // manually copy the value
+              ignore(other.ignore)
+        {}
+
+        // Also add a move assignment operator if needed
+        EXECUTION_DATA& operator=(EXECUTION_DATA&& other) noexcept {
+            if (this != &other) {
+                id = other.id;
+                period = other.period;
+                month = other.month;
+                day = other.day;
+                hour = other.hour;
+                min = other.min;
+                sec = other.sec;
+                last_execution = std::move(other.last_execution);
+                execution_end = std::move(other.execution_end);
+                waiting_block = other.waiting_block;
+                tm = other.tm;
+                f = std::move(other.f);
+                execute_timer = std::move(other.execute_timer);
+                task_name = std::move(other.task_name);
+                type = other.type;
+                is_running.store(other.is_running.load());
+                ignore = other.ignore;
+            }
+            return *this;
+        }
+
     };
 
     // Add this before the TaskScheduler class

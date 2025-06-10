@@ -188,7 +188,7 @@ void TaskScheduler::scheduler(std::promise<void> &barrier)
     while(!stopExecution)
     {
         std::unique_lock tlock(tmutex);
-        cv.wait_for(tlock, seconds(4), [&]{ return taskUpdate || stopExecution; } );
+        cv.wait_for(tlock, seconds(1), [&]{ return taskUpdate || stopExecution; } );
 
         // Finaliza o metodo
         if(stopExecution) break;
@@ -203,77 +203,47 @@ void TaskScheduler::scheduler(std::promise<void> &barrier)
         for(size_t next = 0; next < execution_time.size(); next++)
         {
             ed = &execution_time[next];
-            if(!ed->ignore)
+            if(ed->ignore)
+                continue;
+            
+            // Retorna a duracao da task e a executa se for o caso
+            int64_t dur = duration_cast<seconds>(steady_clock::now()-ed->last_execution).count();
+
+            // Se ja estiver rodando ou a duracao for menor que o periodo, nao executa a task 
+            if(dur < ed->period || ed->is_running.exchange(true))
             {
-                // Retorna a duracao da task e a executa se for o caso
-                int64_t dur = checkForTaskExecution(ed);
-
-                // Verifica se e o proximo a executar, e se for, indica em quanto tempo
-                // if(next_execution > seconds(dur)) next_execution = seconds(dur);
-            }
-        }
-
-        // pausa de execucao de thread por 4 segundos. Deve ser menor que metade do tempo da rotina mais frequente da taskScheduler:
-        // No caso, atualmente a task "TaskScheduler::registerTask(WebSSS::CheckSSSAlive, CHECK_SYSTEM_INTERVAL)"
-        // std::this_thread::sleep_for(seconds(4)); 
-    }
-    
-    /*
-    while(!stopExecution)
-    {
-        std::vector<EXECUTION_DATA*> tasks_to_execute;
-        steady_clock::time_point now = steady_clock::now();
-        // seconds next_execution = seconds(MAX_TIME_BETWEEN_TASK_CHECKING);
-
-        {
-            std::unique_lock tlock(tmutex);
-            cv.wait_for(tlock, seconds(1), [&]{ return taskUpdate || stopExecution; } );
-
-            // Finaliza o metodo
-            if(stopExecution) break;
-
-            // Indica que nao ha nenhuma nova task atualizada
-            taskUpdate = false;
-
-            // Inicialmente coloca um tempo "infinito" para verificar a task novamente
-            for(auto& task : execution_time)
-            {
-                if(task.ignore)
-                    continue;
-
-                auto dur = duration_cast<seconds>(now - task.last_execution).count();
-                if((uint64_t)dur >= task.period)
-                {
-                    tasks_to_execute.push_back(&task);
-                }
-                // else
-                // {
-                //     next_execution = std::min(next_execution, seconds(task.period - dur));
-                // }
                 
+                if(ed->is_running && dur >= ed->period)
+                    Logger::lprintf(DEBUG, "TaskScheduler::scheduler() - Task %s was slow, another is already running (ID: %zu). Period: %ld Last Execution: %ld\n", ed->task_name.c_str(), ed->id, ed->period, dur);
+                
+                continue;
             }
-        }
 
-        // Execute tasks without holding the main lock
-        for(auto* task : tasks_to_execute)
-        {
+            // Task deve ser executada
+            try {
 
-            if(stopExecution) break;
-
-            try 
-            {
-                //checkForTaskExecution(task);
-
-                Logger::lprintf(VERBOSE, "TaskScheduler::scheduler() - Executing task %s (ID: %zu)\n", task->task_name.c_str(), task->id);
+                Logger::lprintf(VERBOSE, "TaskScheduler::scheduler() - Executing task %s (ID: %zu)\n", ed->task_name.c_str(), ed->id);
                 // Inicializa a thread de execucao
-                task->execution_end = std::async(std::launch::async, task->f);
-                Logger::lprintf(VERBOSE, "TaskScheduler::scheduler() - Launched - task %s (ID: %zu)\n", task->task_name.c_str(), task->id);
+
+                ed->execution_end = std::async(std::launch::async, [ed]() {
+                    try {
+                        ed->f();
+                    } catch(const std::exception& e) {
+                        Logger::lprintf(NORMAL, "TaskScheduler: Task %s (ID: %zu) failed: %s\n",
+                            ed->task_name.c_str(), ed->id, e.what());
+                    }
+                    ed->is_running.store(false);
+                });
+
+                Logger::lprintf(VERBOSE, "TaskScheduler::scheduler() - Launched - task %s (ID: %zu)\n", ed->task_name.c_str(), ed->id);
 
                 // Reinicia o contador
-                switch(task->type)
+                switch(ed->type)
                 {
                     case ScheduledType::PERIOD:
                     {
+                        // Reinicia o contador
+                        dur = ed->period;
                         break;
                     }
                     case ScheduledType::METHOD:
@@ -282,25 +252,27 @@ void TaskScheduler::scheduler(std::promise<void> &barrier)
                         time_t rawtime;
                         time(&rawtime);
 
-                        task->period = task->execute_timer(rawtime);
-                        
+                        dur = ed->execute_timer(rawtime);
+                        ed->period = dur;
                         break;
                     }
                 }
 
-                task->last_execution = steady_clock::now();
+                ed->last_execution = steady_clock::now();
             }
-            catch(const std::exception& e)
-            {
-                Logger::lprintf(NORMAL, "TaskScheduler::scheduler() - Exception in task %s (ID: %zu): %s\n", task->task_name.c_str(), task->id, e.what());
+            catch(...) {
+                ed->is_running.store(false);
+                throw;
             }
+            // Verifica se e o proximo a executar, e se for, indica em quanto tempo
+            // if(next_execution > seconds(dur)) next_execution = seconds(dur);
         }
 
-        // Small sleep to prevent busy-waiting
-        std::this_thread::sleep_for(seconds(1));
-
+        // pausa de execucao de thread por 4 segundos. Deve ser menor que metade do tempo da rotina mais frequente da taskScheduler:
+        // No caso, atualmente a task "TaskScheduler::registerTask(WebSSS::CheckSSSAlive, CHECK_SYSTEM_INTERVAL)"
+        // std::this_thread::sleep_for(seconds(4)); 
     }
-    //*/
+
 }
 
 std::string TaskScheduler::getStatus() {
@@ -417,15 +389,33 @@ int64_t TaskScheduler::checkForTaskExecution(EXECUTION_DATA *ed)
 {
     int64_t dur = duration_cast<seconds>(steady_clock::now()-ed->last_execution).count();
 
-    // Se o tempo for maior do que o periodo para ser executado, executa
-    if((uint64_t)dur >= ed->period)
+    // Se ja estiver rodando ou a duracao for menor que o periodo, nao executa a task 
+    if((uint64_t)dur < ed->period || ed->is_running.exchange(true))
     {
+        
+        if(ed->is_running)
+            Logger::lprintf(VERBOSE, "TaskScheduler::scheduler() - Task %s is already running (ID: %zu)\n", ed->task_name.c_str(), ed->id);
+        
+        return dur;
+    }
+
+    // Task deve ser executada
+    try {
 
         Logger::lprintf(VERBOSE, "TaskScheduler::scheduler() - Executing task %s (ID: %zu)\n", ed->task_name.c_str(), ed->id);
         // Inicializa a thread de execucao
-        ed->execution_end = std::async(std::launch::async, ed->f);
-        Logger::lprintf(VERBOSE, "TaskScheduler::scheduler() - Launched - task %s (ID: %zu)\n", ed->task_name.c_str(), ed->id);
 
+        ed->execution_end = std::async(std::launch::async, [ed]() {
+            try {
+                ed->f();
+            } catch(const std::exception& e) {
+                Logger::lprintf(NORMAL, "TaskScheduler: Task %s (ID: %zu) failed: %s\n",
+                    ed->task_name.c_str(), ed->id, e.what());
+            }
+            ed->is_running.store(false);
+        });
+
+        Logger::lprintf(VERBOSE, "TaskScheduler::scheduler() - Launched - task %s (ID: %zu)\n", ed->task_name.c_str(), ed->id);
 
         // Reinicia o contador
         switch(ed->type)
@@ -450,6 +440,11 @@ int64_t TaskScheduler::checkForTaskExecution(EXECUTION_DATA *ed)
 
         ed->last_execution = steady_clock::now();
     }
+    catch(...) {
+        ed->is_running.store(false);
+        throw;
+    }
+    
 
     return dur;
 };
