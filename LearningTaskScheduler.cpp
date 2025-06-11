@@ -62,8 +62,8 @@ void slowTimedRoutineTest()
 void slowTimedRoutine2Test()
 {
     
-    static int time = 7;
-    time += 2;
+    static int time = 3;
+    time += 6;
     Logger::lprintf(DEBUG, "-------------------- Casos de teste 4 - %ld segundos - THREADED EXECUTION ----------------------------------\n", time);
 
     // Aguarda um tempo para verificar se a rotina foi executada

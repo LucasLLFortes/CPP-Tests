@@ -13,6 +13,7 @@
 using namespace std::chrono;
 
 constexpr int MAX_TIME_BETWEEN_TASK_CHECKING = 20;
+constexpr int SLOW_TASK_WARNING_INTERVAL = 5;
 
 class TaskScheduler
 {
@@ -168,7 +169,6 @@ struct TaskConfig {
 
 private:
     static void endTask(std::vector<TaskScheduler::EXECUTION_DATA>::iterator it, std::unique_lock<std::mutex> &tlock);
-    static int64_t checkForTaskExecution(EXECUTION_DATA *ed);
 
     ///////////////////////////////////////////////////////////////////
     // registerTask
